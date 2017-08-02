@@ -1,0 +1,23 @@
+{
+  "name": "ph",
+  "version": "1.0.0",
+  "description": "Git push, but shorter.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --watch"
+  },
+  "keywords": [
+    "git",
+    "git",
+    "push",
+    "github",
+    "abbreviation",
+    "short",
+    "push"
+  ],
+  "author": "Ryan Gaus",
+  "license": "MIT",
+  "devDependencies": {
+    "jest": "^20.0.4"
+  }
+}
