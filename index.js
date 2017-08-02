@@ -52,15 +52,20 @@ function getHighestScoreInCollection(collection) {
 }
 
 const TOKENS = {
-  FLAG: /^--?([a-zA-Z]+)/,
+  SHORT_FLAG: /^-([a-zA-Z0-9])/,
+  FLAG: /^--([a-zA-Z0-9-]{2,})/,
+  FLAG_AT_END: /^-([a-zA-Z0-9-]{2,})$/,
+
+  PULL: /^(pull |,)/,
 
   PUSH_TO: /^:/,
-  GROUP_OPEN: /^\(/,
-  GROUP_CLOSE: /^\)/,
+  CURRENT_BRANCH: /^\./,
+  // GROUP_OPEN: /^\(/,
+  // GROUP_CLOSE: /^\)/,
 
   // Branches or remotes
-  FULL: /^([^ :()-]{3,})( |$|(?=:|\(|\)))/,
-  ABBREVIATED: /^([^()+: ])/,
+  FULL: /^([^()+:,& -]{3,})( |$|(?=:|\(|\)))/,
+  ABBREVIATED: /^([^()+:,& ])/,
 
   // Always resort to whitespace last.
   WHITESPACE: /^[ ]/,
@@ -124,17 +129,32 @@ module.exports.rewriter = function rewrite(things, tokens) {
       // Return the entity.
       return {type: 'ENTITY', value: v};
     case 'FLAG':
-      const name = token.match[1];
+    case 'SHORT_FLAG':
+    case 'FLAG_AT_END':
+      // Find the first capture group that matched (don't look at index 0 since that's the whole
+      // match)
+      const name = token.match.slice(1).find(i => i);
       switch (name) {
-        case 'f': return {type: 'FLAG', name: 'force'};
+        // Common flags
         case 'v': return {type: 'FLAG', name: 'verbose'};
+
+        // Push flags
+        case 'f': return {type: 'FLAG', name: 'force'};
         case 't': return {type: 'FLAG', name: 'tags'};
         case 'n':
         case 'dry':
           return {type: 'FLAG', name: 'dry-run'};
+
+        // Pull flags
         case 'l':
         case 'pull':
           return {type: 'PULL'};
+        case 'nf':
+        case 'no-ff':
+          return {type: 'FLAG', name: 'no-ff'}
+        case 'ff':
+        case 'ff-only':
+          return {type: 'FLAG', name: 'ff-only'}
         default: return {type: 'FLAG', name};
       }
     default:
@@ -143,12 +163,21 @@ module.exports.rewriter = function rewrite(things, tokens) {
   });
 }
 
-module.exports.parser = function parser(tokens) {
+module.exports.parser = function parser(tokens, currentBranch='master') {
   const branch = i => i.type === 'ENTITY' && i.value.type === 'branch';
   const remote = i => i.type === 'ENTITY' && i.value.type === 'remote';
   const pushTo = i => i.type === 'PUSH_TO';
   const flag = i => i.type === 'FLAG';
   const whitespace = i => i.type === 'WHITESPACE';
+  const pull = i => i.type === 'PULL'
+  const currentBranchMatch = i => i.type === 'CURRENT_BRANCH';
+
+  let isPulling = false;
+  const hasOrigin = Boolean(tokens.find(t => t.type === 'ENTITY' && t.value.type === 'remote'));
+  const hasBranch = Boolean(tokens.find(t =>
+    (t.type === 'ENTITY' && t.value.type === 'branch') ||
+    (t.type === 'CURRENT_BRANCH')
+  ));
 
   const MATCHES = [
     {match: [whitespace], then: a => ''},
@@ -156,6 +185,11 @@ module.exports.parser = function parser(tokens) {
     {match: [branch], then: a => `${a.value.name} `},
     {match: [remote], then: a => `${a.value.name} `},
     {match: [branch, pushTo, branch], then: (a, b, c) => `${a.value.name}:${c.value.name} `},
+    {match: [pushTo, branch], then: (a, b) => `:${b.value.name} `},
+    {match: [currentBranchMatch, pushTo, branch], then: (a, b, c) => `${currentBranch}:${c.value.name} `},
+    {match: [branch, pushTo, currentBranchMatch], then: (a, b, c) => `${a.value.name}:${currentBranch} `},
+    {match: [pull], then: a => { isPulling = true; return ''; }},
+    {match: [currentBranchMatch], then: a => currentBranch},
   ];
 
   let result = "";
@@ -184,6 +218,19 @@ module.exports.parser = function parser(tokens) {
     // generator.
     const tokensThatWereMatched = tokens.splice(0, MATCHES[bestMatchIndex].match.length);
     result += MATCHES[bestMatchIndex].then.apply(null, tokensThatWereMatched);
+  }
+
+  if (!hasBranch) {
+    result = `${currentBranch} ${result}`
+  }
+  if (!hasOrigin) {
+    result = `origin ${result}`
+  }
+
+  if (isPulling) {
+    result = `pull ${result}`
+  } else {
+    result = `push ${result}`
   }
 
   // Remove any surrounding whitespace before returning.
