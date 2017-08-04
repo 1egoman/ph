@@ -6,6 +6,9 @@
   "scripts": {
     "test": "jest --watch"
   },
+  "bin": {
+    "ph": "./index.js"
+  },
   "keywords": [
     "git",
     "git",
@@ -19,5 +22,8 @@
   "license": "MIT",
   "devDependencies": {
     "jest": "^20.0.4"
+  },
+  "dependencies": {
+    "chalk": "^2.0.1"
   }
 }
