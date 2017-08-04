@@ -3,7 +3,8 @@
 A tool to quickly execute a git push or git pull. Ph uses huristical parser to try and make sense of
 an extremely simple minilanguage.
 
-> Puts the chemistry back into git push! - Anonymous
+> Puts the chemistry back into git push!
+> - Anonymous
 
 ## Introduction
 At its most simpleist, one can substitute `git push` for the `ph` command, saving a character:

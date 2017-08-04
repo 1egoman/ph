@@ -1,56 +1,32 @@
-const SEPERATORS = /[/_.-]/g;
+const entityMatch = require('./helpers/entityMatch');
+const getHighestScoreInCollection = require('./helpers/getHighestScoreInCollection');
 
-function predicateNeedleMatchScore(predicate, needle) {
-  // A perfect match.
-  if (predicate === needle) {
-    return 1;
-  }
+// ----------------------------------------------------------------------------
+// IDENTIFIERS
+// ----------------------------------------------------------------------------
 
-  const parts = predicate.split(SEPERATORS);
-  const allButFirstPart = parts.length === 1 ? predicate : parts.slice(1).join('-');
+// Simple Tokens - these are parsed directly from the source.
+const FLAG = 'FLAG';
+const SHORT_FLAG = 'SHORT_FLAG';
+const FLAG_AT_END = 'FLAG_AT_END';
+const PULL = 'PULL';
+const PUSH_TO = 'PUSH_TO';
+const CURRENT_BRANCH = 'CURRENT_BRANCH';
+const FULL = 'FULL';
+const ABBREVIATED = 'ABBREVIATED';
+const WHITESPACE = 'WHITESPACE';
 
-  // Matches the last part of the branch
-  if (allButFirstPart === needle) {
-    return 1;
-  }
+// Complex Tokens - combinations of simple tokens are rewritten into these complex tokens
+const ENTITY = 'ENTITY' ;
+/* FLAG is also a complex token - SHORT_FLAG and FLAG_AT_END are rewritten into a FLAG token */
 
-  // Matches the first letter of the last part of the branch
-  // As the final part gets longer, we're more unsure of the answer.
-  if (allButFirstPart[0] === needle[0]) {
-    return 1 / allButFirstPart.length
-  }
-
-  // Hail mary - if the first letter of the prefix matches, use that.
-  // This could be bad though because `f` would match both `feature-foo` and `feature-bar`, for
-  // example.
-  if (predicate[0] === needle[0]) {
-    return 1 / allButFirstPart.length
-  }
-
-  return 0;
-}
-
-function getHighestScoreInCollection(collection) {
-  let result, resultScore = 0;
-
-  // For each item in the collection:
-  // 1. If it's undefined, throw it out.
-  // 2. If the item's score is bgger than the result, then promote the item to be the result.
-  for (const item in collection) {
-    if (collection[item] === undefined) {
-      continue;
-    } else if (
-      !item ||
-      collection[item] > resultScore
-    ) {
-      result = item;
-      resultScore = collection[item]
-    }
-  }
-
-  return result;
-}
-
+// ----------------------------------------------------------------------------
+// TOKENIZER
+// A tokenizer typically takes raw input and converts it into tokens. The below
+// tokenizer looks for the first regular expression match from the start of
+// the input as far into the input as possible and removes that, converting the
+// input to a token.
+// ----------------------------------------------------------------------------
 const TOKENS = {
   SHORT_FLAG: /^-([a-zA-Z0-9])/,
   FLAG: /^--([a-zA-Z0-9-]{2,})/,
@@ -70,6 +46,7 @@ const TOKENS = {
   // Always resort to whitespace last.
   WHITESPACE: /^[ ]/,
 };
+
 module.exports.tokenizer = function tokenizer(stack) {
   let match, tokens = [];
   outer:
@@ -78,7 +55,7 @@ module.exports.tokenizer = function tokenizer(stack) {
       if (match = TOKENS[token].exec(stack)) {
         tokens.push({match, type: token})
         stack = stack.slice(match[0].length);
-        continue outer;
+        continue outer; // Continue on to the next iteration of the while loop.
       }
     }
 
@@ -88,14 +65,21 @@ module.exports.tokenizer = function tokenizer(stack) {
   return tokens;
 }
 
-// Rewrite branch and remote names. Takes branch abbreviations and turns them into full entities.
-module.exports.rewriter = function rewrite(things, tokens) {
+// ----------------------------------------------------------------------------
+// REWRITER
+// Typically seen as a hack by compiler nerds, a rewriter takes AST, performs
+// a transformation, and returns AST. In our case, the rewiter takes a list of
+// all available entities as well as a list of tokens, returning a modified set
+// of tokens.
+// ----------------------------------------------------------------------------
+module.exports.rewriter = function rewrite(entities, tokens) {
   return tokens.map(token => {
     switch (token.type) {
-    case 'ABBREVIATED':
+    // Rewrite branch and remote names. Takes branch abbreviations and turns them into full entities.
+    case ABBREVIATED:
       // Reduce through all possible items that could be matched.
-      const scores = things.reduce((scores, item, index) => {
-        const score = predicateNeedleMatchScore(item.name, token.match[1])
+      const scores = entities.reduce((scores, item, index) => {
+        const score = entityMatch(item.name, token.match[1])
 
         // If the new ranking is higher than the existing one, then replace the lower one.
         if (scores[index] === undefined || score > scores[index]) {
@@ -105,19 +89,21 @@ module.exports.rewriter = function rewrite(things, tokens) {
         return scores;
       }, {});
 
-      const value = things[getHighestScoreInCollection(scores)];
+      const value = entities[getHighestScoreInCollection(scores)];
 
       if (!value) {
         throw new Error(`No such remote or branch found matching the entity '${token.match[1]}'`);
       }
 
-      return {type: 'ENTITY', value};
-    case 'FULL':
+      return {type: ENTITY, value};
+
+    // Rewrite branch and remote names. Takes a full branch and converts it into an entity.
+    case FULL:
       // Find the first item that matches.
-      const v = things.find(item => {
+      const v = entities.find(item => {
         if (token.match[1] === item.name) {
           return item;
-        } else if (token.match[1] === item.name.slice(item.name.split(SEPERATORS)[0].length+1)) {
+        } else if (token.match[1] === item.name.slice(item.name.split(entityMatch.SEPERATORS)[0].length+1)) {
           return item;
         }
       });
@@ -127,35 +113,37 @@ module.exports.rewriter = function rewrite(things, tokens) {
       }
 
       // Return the entity.
-      return {type: 'ENTITY', value: v};
-    case 'FLAG':
-    case 'SHORT_FLAG':
-    case 'FLAG_AT_END':
+      return {type: ENTITY, value: v};
+
+    // Rewrite flag names to 
+    case FLAG:
+    case SHORT_FLAG:
+    case FLAG_AT_END:
       // Find the first capture group that matched (don't look at index 0 since that's the whole
       // match)
       const name = token.match.slice(1).find(i => i);
       switch (name) {
         // Common flags
-        case 'v': return {type: 'FLAG', name: 'verbose'};
+        case 'v': return {type: FLAG, name: 'verbose'};
 
         // Push flags
-        case 'f': return {type: 'FLAG', name: 'force'};
-        case 't': return {type: 'FLAG', name: 'tags'};
+        case 'f': return {type: FLAG, name: 'force'};
+        case 't': return {type: FLAG, name: 'tags'};
         case 'n':
         case 'dry':
-          return {type: 'FLAG', name: 'dry-run'};
+          return {type: FLAG, name: 'dry-run'};
 
         // Pull flags
         case 'l':
         case 'pull':
-          return {type: 'PULL'};
+          return {type: PULL};
         case 'nf':
         case 'no-ff':
-          return {type: 'FLAG', name: 'no-ff'}
+          return {type: FLAG, name: 'no-ff'}
         case 'ff':
         case 'ff-only':
-          return {type: 'FLAG', name: 'ff-only'}
-        default: return {type: 'FLAG', name};
+          return {type: FLAG, name: 'ff-only'}
+        default: return {type: FLAG, name};
       }
     default:
       return token;
@@ -163,21 +151,27 @@ module.exports.rewriter = function rewrite(things, tokens) {
   });
 }
 
-module.exports.parser = function parser(tokens, currentBranch='master') {
-  const branch = i => i.type === 'ENTITY' && i.value.type === 'branch';
-  const remote = i => i.type === 'ENTITY' && i.value.type === 'remote';
-  const pushTo = i => i.type === 'PUSH_TO';
-  const flag = i => i.type === 'FLAG';
-  const whitespace = i => i.type === 'WHITESPACE';
-  const pull = i => i.type === 'PULL'
-  const currentBranchMatch = i => i.type === 'CURRENT_BRANCH';
-
+// ----------------------------------------------------------------------------
+// GENERATOR
+// THe generator takes a list of tokens and converts them to a string, their
+// final representation. In addition, this generator takes the contents of the
+// current branch, which is used when no branch was specified.
+// ----------------------------------------------------------------------------
+module.exports.generator = function generator(tokens, currentBranch='master') {
   let isPulling = false;
-  const hasOrigin = Boolean(tokens.find(t => t.type === 'ENTITY' && t.value.type === 'remote'));
+  const hasOrigin = Boolean(tokens.find(t => t.type === ENTITY && t.value.type === 'remote'));
   const hasBranch = Boolean(tokens.find(t =>
-    (t.type === 'ENTITY' && t.value.type === 'branch') ||
-    (t.type === 'CURRENT_BRANCH')
+    (t.type === ENTITY && t.value.type === 'branch') ||
+    (t.type === CURRENT_BRANCH)
   ));
+
+  const branch = i => i.type === ENTITY && i.value.type === 'branch';
+  const remote = i => i.type === ENTITY && i.value.type === 'remote';
+  const pushTo = i => i.type === PUSH_TO;
+  const flag = i => i.type === FLAG;
+  const whitespace = i => i.type === WHITESPACE;
+  const pull = i => i.type === PULL
+  const currentBranchMatch = i => i.type === CURRENT_BRANCH;
 
   const MATCHES = [
     {match: [whitespace], then: a => ''},
@@ -236,5 +230,3 @@ module.exports.parser = function parser(tokens, currentBranch='master') {
   // Remove any surrounding whitespace before returning.
   return result.trim();
 }
-
-module.exports.predicateNeedleMatchScore = predicateNeedleMatchScore;

@@ -1,16 +1,17 @@
-const {default: getBranchAndRemoteFromArgs, predicateNeedleMatchScore, tokenizer, rewriter, parser} = require('./index');
+const {default: getBranchAndRemoteFromArgs, tokenizer, rewriter, generator} = require('./index');
+const entityMatch = require('./helpers/entityMatch');
 const assert = require('assert');
 
-describe('matching a predicate given a search item', function() {
+describe('matching an entity given a needle', function() {
   it('should match master', function() {
-    assert.equal(predicateNeedleMatchScore('master', 'master'), 1);
-    assert.equal(predicateNeedleMatchScore('prefix/master', 'master'), 1);
-    assert.equal(predicateNeedleMatchScore('master', 'm'), 1/6);
-    assert.equal(predicateNeedleMatchScore('prefix/master', 'm'), 1/6);
+    assert.equal(entityMatch('master', 'master'), 1);
+    assert.equal(entityMatch('prefix/master', 'master'), 1);
+    assert.equal(entityMatch('master', 'm'), 1/6);
+    assert.equal(entityMatch('prefix/master', 'm'), 1/6);
   });
 });
 
-describe('parse entries', function() {
+describe('whole thing', function() {
   const things = [
     {type: 'remote', name: 'origin'},
     {type: 'branch', name: 'master'},
@@ -18,93 +19,93 @@ describe('parse entries', function() {
     {type: 'branch', name: 'feature-tsuperlong'},
   ];
 
-  it('should parse a remote and branch', function() {
+  it('should generate a remote and branch', function() {
     const tokens = tokenizer('origin master');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin master');
+    assert.equal(generator(rewritten), 'push origin master');
   });
-  it('should parse an abbreviated remote and branch', function() {
+  it('should generate an abbreviated remote and branch', function() {
     const tokens = tokenizer('om');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin master');
+    assert.equal(generator(rewritten), 'push origin master');
   });
-  it('should "see through" a prefix and parse the base of a branch', function() {
+  it('should "see through" a prefix and generate the base of a branch', function() {
     const tokens = tokenizer('ot');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin feature-test');
+    assert.equal(generator(rewritten), 'push origin feature-test');
   });
   it('should fall back to using the prefix if there\'s no other option', function() {
     const tokens = tokenizer('of');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin feature-test');
+    assert.equal(generator(rewritten), 'push origin feature-test');
   });
-  it('should correctly parse an alternate branch destination', function() {
+  it('should correctly generate an alternate branch destination', function() {
     const tokens = tokenizer('om:t');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin master:feature-test');
+    assert.equal(generator(rewritten), 'push origin master:feature-test');
   });
-  it('should correctly parse an alternate branch destination (non-prefixed branch as source)', function() {
+  it('should correctly generate an alternate branch destination (non-prefixed branch as source)', function() {
     const tokens = tokenizer('o master:t');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin master:feature-test');
+    assert.equal(generator(rewritten), 'push origin master:feature-test');
   });
-  it('should correctly parse an alternate branch destination (non-prefixed branch as dest)', function() {
+  it('should correctly generate an alternate branch destination (non-prefixed branch as dest)', function() {
     const tokens = tokenizer('om:test');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin master:feature-test');
+    assert.equal(generator(rewritten), 'push origin master:feature-test');
   });
-  it('should correctly parse an origin, then a branch without a source', function() {
+  it('should correctly generate an origin, then a branch without a source', function() {
     const tokens = tokenizer('o:m');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten), 'push origin :master');
+    assert.equal(generator(rewritten), 'push origin :master');
   });
 
-  it('should correctly parse the current branch', function() {
+  it('should correctly generate the current branch', function() {
     const tokens = tokenizer('');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten, 'current-branch'), 'push origin current-branch');
+    assert.equal(generator(rewritten, 'current-branch'), 'push origin current-branch');
   });
-  it('should correctly parse the current branch, with explicit identifier', function() {
+  it('should correctly generate the current branch, with explicit identifier', function() {
     const tokens = tokenizer('.');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten, 'current-branch'), 'push origin current-branch');
+    assert.equal(generator(rewritten, 'current-branch'), 'push origin current-branch');
   });
-  it('should correctly parse the current branch with an explicit destination', function() {
+  it('should correctly generate the current branch with an explicit destination', function() {
     const tokens = tokenizer('.:m');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten, 'current-branch'), 'push origin current-branch:master');
+    assert.equal(generator(rewritten, 'current-branch'), 'push origin current-branch:master');
   });
-  it('should correctly parse the current branch with an explicit source', function() {
+  it('should correctly generate the current branch with an explicit source', function() {
     const tokens = tokenizer('m:.');
     const rewritten = rewriter(things, tokens);
-    assert.equal(parser(rewritten, 'current-branch'), 'push origin master:current-branch');
+    assert.equal(generator(rewritten, 'current-branch'), 'push origin master:current-branch');
   });
 
   describe('flags', () => {
-    it('should correctly parse a -f flag', function() {
+    it('should correctly generate a -f flag', function() {
       const tokens = tokenizer('om-f');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'push origin master --force');
+      assert.equal(generator(rewritten), 'push origin master --force');
     });
-    it('should correctly parse a --force flag', function() {
+    it('should correctly generate a --force flag', function() {
       const tokens = tokenizer('om--force');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'push origin master --force');
+      assert.equal(generator(rewritten), 'push origin master --force');
     });
-    it('should correctly parse a -v flag', function() {
+    it('should correctly generate a -v flag', function() {
       const tokens = tokenizer('om-v');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'push origin master --verbose');
+      assert.equal(generator(rewritten), 'push origin master --verbose');
     });
-    it('should correctly parse a --verbose flag', function() {
+    it('should correctly generate a --verbose flag', function() {
       const tokens = tokenizer('om --verbose');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'push origin master --verbose');
+      assert.equal(generator(rewritten), 'push origin master --verbose');
     });
-    it('should correctly parse a --some-super-long-unknown-flag flag', function() {
+    it('should correctly generate a --some-super-long-unknown-flag flag', function() {
       const tokens = tokenizer('om --some-super-long-unknown-flag');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'push origin master --some-super-long-unknown-flag');
+      assert.equal(generator(rewritten), 'push origin master --some-super-long-unknown-flag');
     });
   });
 
@@ -112,27 +113,27 @@ describe('parse entries', function() {
     it('should correctly pull from origin master', function() {
       const tokens = tokenizer('pull origin master');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'pull origin master');
+      assert.equal(generator(rewritten), 'pull origin master');
     });
     it('should correctly pull from origin master (abbreviated branch name and origin)', function() {
       const tokens = tokenizer('pull om');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'pull origin master');
+      assert.equal(generator(rewritten), 'pull origin master');
     });
     it('should correctly pull from origin master, with short flag', function() {
       const tokens = tokenizer('-lom');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'pull origin master');
+      assert.equal(generator(rewritten), 'pull origin master');
     });
     it('should correctly pull from origin master, with short flag at the end', function() {
       const tokens = tokenizer('om-l');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'pull origin master');
+      assert.equal(generator(rewritten), 'pull origin master');
     });
     it('should correctly pull from origin master, with pull abbreviation', function() {
       const tokens = tokenizer('om,');
       const rewritten = rewriter(things, tokens);
-      assert.equal(parser(rewritten), 'pull origin master');
+      assert.equal(generator(rewritten), 'pull origin master');
     });
   });
 });
