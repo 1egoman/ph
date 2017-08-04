@@ -68,7 +68,7 @@ Promise.all([
   // Spawn the git command, and execute:
   const spawned = childProcess.spawn('git', output.split(' '), {cwd: process.cwd()});
   spawned.stdout.on('data', d => console.log(d.toString()));
-  spawned.stderr.on('data', d => console.log(chalk.red(d.toString())));
+  spawned.stderr.on('data', d => console.log(d.toString()));
 
   spawned.on('close', code => {
     if (code === 0) {
