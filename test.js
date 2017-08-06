@@ -60,6 +60,12 @@ describe('whole thing', function() {
     assert.equal(generator(rewritten), 'push origin :master');
   });
 
+  it('should use the default branch when a remote is specified', function() {
+    const tokens = tokenizer('o');
+    const rewritten = rewriter(entities, tokens);
+    assert.equal(generator(rewritten), 'push origin master');
+  });
+
   it('should correctly generate the current branch', function() {
     const tokens = tokenizer('');
     const rewritten = rewriter(entities, tokens);

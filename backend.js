@@ -215,10 +215,10 @@ module.exports.generator = function generator(tokens, currentBranch='master') {
   }
 
   if (!hasBranch) {
-    result = `${currentBranch} ${result}`
+    result = `${result.trim()} ${currentBranch}`
   }
   if (!hasOrigin) {
-    result = `origin ${result}`
+    result = `origin ${result.trim()}`
   }
 
   if (isPulling) {
