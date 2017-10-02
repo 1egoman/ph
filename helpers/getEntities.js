@@ -42,9 +42,9 @@ module.exports.currentBranch = function currentBranch(childProcess) {
         } else {
           // Remove the `* ` before the branch name that indicates that it was the selected branch.
           const branchName = branch.slice(2);
-          if (branch.indexOf(' ') !== -1) {
+          if (branch.indexOf('(HEAD detached at') !== -1) {
             // The user checked out a ref that isn't a branch.
-            resolve(undefined);
+            resolve(branch.slice('(HEAD detached at'.length).slice(0, -1));
           } else {
             resolve(branchName);
           }
