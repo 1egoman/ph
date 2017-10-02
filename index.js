@@ -41,9 +41,13 @@ function main() {
 }
 
 if (require.main === module) {
-  main().catch(err => {
-    console.error(chalk.red('Error running command:'));
-    console.error(err);
-    process.exit(-1);
-  });
+  if (process.argv[2] === 'version') {
+    console.log(`ph v${require('./package').version}`);
+  } else {
+    main().catch(err => {
+      console.error(chalk.red('Error running command:'));
+      console.error(err);
+      process.exit(-1);
+    });
+  }
 }
